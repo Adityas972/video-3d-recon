@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+data/raw/*
+data/frames/*
+!data/raw/.gitkeep
+!data/frames/.gitkeep
+
+outputs/meshes/*
+outputs/reports/*
+!outputs/meshes/.gitkeep
+!outputs/reports/.gitkeep
+
+tools/PhotogrammetryCLI/.build/
