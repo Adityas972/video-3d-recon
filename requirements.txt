@@ -3,3 +3,4 @@ opencv-python
 trimesh[easy]
 scikit-image
 matplotlib
+usd-core

@@ -20,8 +20,9 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import trimesh
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+from usdz_utils import load_usdz_as_trimesh
 
 
 def load_json(path: Path) -> dict | None:
@@ -41,7 +42,7 @@ def render_thumbnails(mesh_path: Path, out_prefix: Path) -> list[str]:
     """
     saved = []
     try:
-        mesh = trimesh.load(mesh_path, force="mesh")
+        mesh = load_usdz_as_trimesh(mesh_path)
         triangles = mesh.vertices[mesh.faces]
         bounds = mesh.bounds
         center = bounds.mean(axis=0)
@@ -75,7 +76,7 @@ def build_report(scene: str, details: list[str], meshes_dir: Path, reports_dir: 
     rows = []
     all_thumbnails: dict[str, list[str]] = {}
     for detail in details:
-        obj_path = meshes_dir / f"{scene}_{detail}.obj"
+        usdz_path = meshes_dir / f"{scene}_{detail}.usdz"
         stats_path = meshes_dir / f"{scene}_{detail}.usdz.stats.json"
         geometry_path = reports_dir / f"{scene}_{detail}_geometry.json"
 
@@ -95,8 +96,8 @@ def build_report(scene: str, details: list[str], meshes_dir: Path, reports_dir: 
         }
         rows.append(row)
 
-        if obj_path.exists():
-            all_thumbnails[detail] = render_thumbnails(obj_path, reports_dir / f"{scene}_{detail}")
+        if usdz_path.exists():
+            all_thumbnails[detail] = render_thumbnails(usdz_path, reports_dir / f"{scene}_{detail}")
 
     lines = [f"# Reconstruction report: {scene}", ""]
     if total_frames is not None:

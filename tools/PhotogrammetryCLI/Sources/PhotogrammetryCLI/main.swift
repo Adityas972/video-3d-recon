@@ -5,11 +5,13 @@
 // stack on Apple Silicon.
 //
 // Usage:
-//   PhotogrammetryCLI <input-frames-dir> <preview|reduced|medium|full|raw> <output1.usdz> [output2.obj ...]
+//   PhotogrammetryCLI <input-frames-dir> <preview|reduced|medium|full|raw> <output.usdz> [output2.usdz ...]
 //
-// Multiple output paths run off a single feature-matching + pose-estimation
-// pass (only the export step repeats per format), which is why formats are
-// batched into one invocation instead of one process() call per format.
+// .usdz is the only extension Request.modelFile accepts on this OS/API
+// version -- .obj/.ply requests throw invalidOutput (confirmed empirically).
+// Multiple output paths are still supported (e.g. writing several detail
+// levels' worth of .usdz from one input set), sharing a single feature-
+// matching + pose-estimation pass.
 //
 // On success, writes a JSON stats sidecar next to the FIRST output model
 // (same path with .stats.json appended) recording sample counts, detail

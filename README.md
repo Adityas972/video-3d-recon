@@ -11,12 +11,23 @@ Turns a short handheld orbit video of an object into a verified, evaluated
   motion + multi-view-stereo engine, Metal-accelerated. Used instead of
   COLMAP+dense-MVS or 3D Gaussian Splatting because both of those require a
   CUDA GPU for the dense/rasterization step, which this Mac doesn't have.
-- **Geometry pipeline**: `scripts/03_verify_geometry.py` doesn't trust
-  Apple's exporter blindly — it independently re-exports each reconstructed
-  mesh to `.ply` and `.glb`, reloads them, and checks vertex/face counts and
-  surface area survive the round trip. It also confirms the `.usdz` output
-  is at least a well-formed zip container. Exits non-zero on any mismatch,
-  so it can gate a pipeline run the way a CI check would.
+  `.usdz` is the only output extension the API accepts for a `modelFile`
+  request (confirmed empirically — `.obj`/`.ply` both throw `invalidOutput`
+  on this OS/API version), so it's the only format requested from Apple's
+  side; every other format comes from this pipeline's own export code.
+- **Geometry pipeline**: `scripts/usdz_utils.py` reads the mesh back out of
+  the `.usdz` via USD's own Python bindings (`pxr`, from `usd-core`) — no
+  format-conversion trust in Apple's exporter is assumed. From there,
+  `scripts/03_verify_geometry.py` independently re-exports the mesh to
+  `.obj`, `.ply`, and `.glb`, reloads each with `trimesh`, and checks
+  vertex/face counts and surface area survive the round trip. Exits
+  non-zero on any mismatch, so it can gate a pipeline run the way a CI
+  check would.
+- **Self-test fixture**: `scripts/00_generate_synthetic_test_video.py`
+  renders a textured, Lambertian-shaded low-poly shape orbited by a virtual
+  camera and encodes it to an `.mp4`, so the full pipeline can be exercised
+  end-to-end without waiting on a real capture. It is not a substitute for
+  testing against real footage (see Results).
 - **Eval harness**: `scripts/04_eval_harness.py` runs reconstruction at
   multiple detail levels (`preview`/`reduced`/`medium`) and produces one
   Markdown report comparing processing time, mesh complexity, watertightness,
@@ -33,6 +44,13 @@ source .venv/bin/activate
 pip install -r requirements.txt
 
 # builds tools/PhotogrammetryCLI/.build/release/PhotogrammetryCLI on first run
+```
+
+To try the pipeline immediately without a real capture:
+
+```bash
+python scripts/00_generate_synthetic_test_video.py
+python run_pipeline.py --video data/raw/synthetic_orbit.mp4 --scene synth --fps 12
 ```
 
 Requires macOS 13+ on Apple Silicon (`PhotogrammetrySession.isSupported`
@@ -57,15 +75,22 @@ needs rerunning after tweaking a threshold.
 
 ## Results
 
-*(Fill in after a real capture — this scaffold has been smoke-tested with
-synthetic meshes and a placeholder image set to verify the pipeline
-plumbing, but not yet run on a real object capture.)*
+**Synthetic smoke test** (72-frame rendered orbit, `scripts/00_generate_synthetic_test_video.py`
+— confirms the pipeline is mechanically correct end-to-end, *not* a stand-in
+for real-world reconstruction quality: a matplotlib render has none of the
+lighting falloff, sensor noise, or lens distortion real photos do):
 
 | Detail | Time (s) | Vertices | Faces | Watertight | Verified |
 |---|---|---|---|---|---|
-| preview | — | — | — | — | — |
-| reduced | — | — | — | — | — |
-| medium | — | — | — | — | — |
+| preview | 4.9 | 1539 | 3074 | True | yes |
+| reduced | 7.5 | 1483 | 2962 | True | yes |
+
+All 72 input frames were used (0 skipped/invalid) and every geometry
+round-trip check (`.usdz` → `.obj`/`.ply`/`.glb` → reload) passed.
+
+**Real capture**: not yet run — this needs an actual object filmed with a
+phone camera. Once run, replace this section with that report's table
+(`outputs/reports/<scene>_report.md`) and a thumbnail.
 
 ## Why this design
 
@@ -82,11 +107,11 @@ plumbing, but not yet run on a real object capture.)*
 - **Blur-based frame filtering before reconstruction, not after.** Feature
   matching on blurry frames wastes time and can introduce bad matches;
   filtering at ingest is cheaper than debugging a bad reconstruction later.
-- **Independent re-export in the verification step**, rather than trusting
-  Apple's own multi-format export. If `PhotogrammetrySession` ever silently
-  degraded one export format relative to another, checking Apple's `.obj`
-  against Apple's `.usdz` wouldn't catch it — round-tripping through a
-  separate library (`trimesh`) is a genuinely independent check.
+- **Reading `.usdz` back out via `pxr` instead of trusting a second Apple
+  export.** Apple's API doesn't offer a second format to cross-check against
+  anyway (`.obj`/`.ply` requests are rejected outright), so the independent
+  check has to start from parsing the actual USD mesh data, then round-trip
+  through a wholly separate library (`trimesh`) for the format conversions.
 - **Matplotlib thumbnails over an OpenGL/pyglet renderer.** trimesh's
   built-in viewer needs a real windowing context and was flaky in testing
   on this pyglet/macOS combination; a flat-shaded matplotlib render has no

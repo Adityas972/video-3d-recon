@@ -25,7 +25,10 @@ mkdir -p "$OUT_DIR"
 
 for DETAIL in "${DETAILS[@]}"; do
     echo "[run] scene=$SCENE detail=$DETAIL"
+    # .usdz is the only output extension PhotogrammetrySession.Request.modelFile
+    # accepts on this OS/API version -- .obj/.ply requests throw invalidOutput
+    # (confirmed empirically). scripts/usdz_utils.py reads the mesh back out
+    # of the .usdz for the verification/eval steps.
     "$CLI_BIN" "$FRAMES_DIR" "$DETAIL" \
-        "$OUT_DIR/${SCENE}_${DETAIL}.usdz" \
-        "$OUT_DIR/${SCENE}_${DETAIL}.obj"
+        "$OUT_DIR/${SCENE}_${DETAIL}.usdz"
 done
