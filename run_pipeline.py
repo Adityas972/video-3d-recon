@@ -35,6 +35,11 @@ def main() -> int:
     parser.add_argument("--fps", type=float, default=3.0)
     parser.add_argument("--drop-fraction", type=float, default=0.15,
                          help="Fraction of sampled frames to drop as blurriest-of-the-set")
+    parser.add_argument("--auto-crop-subject", action="store_true",
+                         help="Crop frames to the one region that changes across them (scripts/01b) -- "
+                              "for a fixed-camera shot where a rotating subject shares the frame with "
+                              "OTHER static objects/clutter. Do not use for a genuine camera-orbit capture, "
+                              "where the whole frame is expected to change with viewpoint.")
     parser.add_argument("--details", nargs="+", default=["preview", "reduced", "medium"])
     args = parser.parse_args()
 
@@ -49,6 +54,12 @@ def main() -> int:
         "--fps", str(args.fps),
         "--drop-fraction", str(args.drop_fraction),
     ])
+
+    if args.auto_crop_subject:
+        run_step("1b/4 auto-crop to moving subject", [
+            python, "scripts/01b_crop_to_subject.py",
+            "--frames-dir", str(frames_dir),
+        ])
 
     run_step("2/4 photogrammetry reconstruction", [
         "bash", "scripts/02_run_photogrammetry.sh", str(frames_dir), args.scene, *args.details,

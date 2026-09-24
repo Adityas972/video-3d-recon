@@ -23,6 +23,16 @@ Turns a short handheld orbit video of an object into a verified, evaluated
   vertex/face counts and surface area survive the round trip. Exits
   non-zero on any mismatch, so it can gate a pipeline run the way a CI
   check would.
+- **Auto-crop to subject** (opt-in, `--auto-crop-subject`): for a fixed-camera
+  shot where a rotating subject shares the frame with other static clutter,
+  `scripts/01b_crop_to_subject.py` stacks all frames, takes per-pixel
+  variance over time, and crops to the bounding box of the one region that
+  actually changes — the static parts vanish identically across frames, so
+  they contribute zero variance. Refuses to crop (leaves frames untouched)
+  if the detected region covers most of the frame, since that means the
+  *whole* frame is changing — i.e. this is a real camera-orbit capture,
+  where there's nothing static to crop away from and this technique doesn't
+  apply.
 - **Self-test fixture**: `scripts/00_generate_synthetic_test_video.py`
   renders a textured, Lambertian-shaded low-poly shape orbited by a virtual
   camera and encodes it to an `.mp4`, so the full pipeline can be exercised
@@ -67,6 +77,11 @@ checks this at runtime) and Xcode Command Line Tools for the Swift build.
 python run_pipeline.py --video data/raw/mug.mov --scene mug
 ```
 
+Add `--auto-crop-subject` if the shot has other static objects/props
+sharing the frame with the subject (see "Auto-crop to subject" above and
+the real-footage case in Results) — omit it for a genuine camera-orbit
+capture, where it has nothing valid to do.
+
 3. Read `outputs/reports/mug_report.md`.
 
 Each stage can also be run standalone (`scripts/01_extract_frames.py`,
@@ -93,15 +108,8 @@ came out non-watertight (a small hole in the low-poly approximation) while
 simplification, not a bug.
 
 **Real footage (Pexels stock video, a globe/cylinder/cube studio still-life,
-camera fixed, globe motorized to spin in place)**: ran end-to-end and did
-*not* crash — but the result is a real negative case worth keeping, not a
-success:
-
-| Detail | Time (s) | Vertices | Faces | Watertight | Verified |
-|---|---|---|---|---|---|
-| preview | 7.6 | 1558 | 3022 | False | yes |
-
-Two real issues surfaced, both fixed in the code except the second:
+camera fixed, globe motorized to spin in place)**: ran end-to-end and
+surfaced two real issues, both now fixed in code:
 
 1. **The blur filter dropped every single frame.** Variance-of-Laplacian
    scales with scene contrast, not just focus — this clip's moody, low-key
@@ -109,30 +117,45 @@ Two real issues surfaced, both fixed in the code except the second:
    tuned on brighter test frames. Fixed by switching `01_extract_frames.py`
    to drop the blurriest *percentile* of the sampled set instead of an
    absolute cutoff, which self-calibrates to each video's lighting.
-2. **The reconstruction itself is geometrically wrong, and verification
-   didn't catch it.** The mesh is a single fused blob — part sphere, part
-   flattened slab — because the shot has a fixed camera with only the
-   globe rotating while the cube and cylinder behind it stay static. SfM
-   assumes one rigid scene across all views; here two independently-moving
-   things share the frame, which no amount of feature matching can resolve
-   into a correct single geometry. The verification step still reported
-   "yes" because it only checks that the mesh survives format round-trips
-   *internally consistently* — that's a check on export integrity, not
-   reconstruction accuracy, and this is exactly the gap between the two.
-   Not fixed, because the fix is capture discipline (crop to a clean plate
-   with only the subject and nothing else in frame), not code — but worth
-   stating plainly rather than papering over with a "verified: yes" that
-   implies more than it means.
+2. **The reconstruction was geometrically wrong, and verification didn't
+   catch it.** First attempt (no crop):
+
+   | Detail | Vertices | Faces | Watertight | Verified |
+   |---|---|---|---|---|
+   | preview | 1558 | 3022 | False | yes |
+
+   — a single fused blob, part sphere, part flattened slab, because the
+   shot has a fixed camera with only the globe rotating while the cube and
+   cylinder behind it stay static. SfM assumes one rigid scene across all
+   views; two independently-moving things sharing a frame breaks that no
+   matter how clean the feature matching is. Verification still said "yes"
+   because it only checks format round-trip integrity, not reconstruction
+   accuracy — a real gap between the two worth knowing about, not papering
+   over.
+
+   Fixed with `scripts/01b_crop_to_subject.py` (`--auto-crop-subject`):
+   crop to the one region with temporal variance (the spinning globe),
+   which removes the confounding static geometry entirely before it
+   reaches Object Capture:
+
+   | Detail | Vertices | Faces | Watertight | Verified |
+   |---|---|---|---|---|
+   | preview | 929 | 1840 | False | yes |
+
+   Now a single round, blob-like shape — not a perfect sphere (a fixed
+   camera watching an object spin in place still has no true stereo
+   parallax on that object, only texture and silhouette cues), but a
+   coherent single-object reconstruction instead of a fused mess.
 
 **Real capture with genuine camera motion**: still not run. A second stock
 clip (a static-tripod push-in on a statue) was checked and rejected for the
 same underlying reason — no angular parallax, just a zoom. Stock b-roll is
 shot for visual storytelling, not photogrammetry, and in practice almost
-none of it has the camera path Object Capture needs. The reliable next
-step is still filming a real ~30-45s phone orbit around a small object by
-hand — genuine lateral motion around a single static subject with nothing
-else in frame is what both of the real-footage attempts above were
-missing.
+none of it has the camera path Object Capture needs. Filming a real
+~30-45s phone orbit around a small object by hand — genuine lateral motion
+around a single static subject, camera actually moving — is the one case
+neither the synthetic fixture nor either stock clip has tested yet, and
+the remaining way to see this pipeline's true reconstruction quality.
 
 ## Why this design
 
@@ -154,6 +177,14 @@ missing.
   anyway (`.obj`/`.ply` requests are rejected outright), so the independent
   check has to start from parsing the actual USD mesh data, then round-trip
   through a wholly separate library (`trimesh`) for the format conversions.
+- **Temporal-variance cropping, opt-in rather than automatic.** It's a
+  correct fix only for the "fixed camera, rotating subject plus other
+  static clutter" case it was built for; on a genuine camera-orbit capture
+  the entire frame legitimately changes with viewpoint, and blindly
+  applying this crop would remove real structure instead of confounding
+  clutter. It self-guards for that case (skips cropping when the detected
+  region covers most of the frame) but stays behind a flag rather than
+  running by default.
 - **Matplotlib thumbnails over an OpenGL/pyglet renderer.** trimesh's
   built-in viewer needs a real windowing context and was flaky in testing
   on this pyglet/macOS combination; a flat-shaded matplotlib render has no
