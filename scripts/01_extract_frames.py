@@ -5,9 +5,17 @@ Object Capture wants a set of sharp, well-distributed still photos, not raw
 video frames -- most consecutive frames from a handheld pan are near-
 duplicates or motion-blurred, and feeding all of them in just slows down
 feature matching without adding coverage. This script samples at a fixed
-rate with ffmpeg, then drops frames below a blur threshold (variance of the
-Laplacian, a standard focus-measure) so what's left is close to what you'd
-get shooting stills by hand.
+rate with ffmpeg, then drops the blurriest fraction of frames by variance
+of the Laplacian (a standard focus-measure).
+
+Blur is filtered by PERCENTILE within the sampled set, not an absolute
+threshold: variance-of-Laplacian scales with scene contrast, not just
+actual sharpness -- a flat, moody studio-lit shot can score 5-10x lower
+than a high-contrast outdoor one while being just as in-focus (confirmed
+against a real low-key product-photography clip, where every frame scored
+8-16 against an absolute default of 60 that was tuned on brighter test
+footage and silently dropped all of them). Dropping the bottom N% of the
+set's own distribution self-calibrates to each video's lighting instead.
 """
 import argparse
 import json
@@ -16,6 +24,7 @@ import sys
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 
 def extract_raw_frames(video_path: Path, raw_dir: Path, fps: float) -> list[Path]:
@@ -45,8 +54,8 @@ def main() -> int:
     parser.add_argument("--video", required=True, type=Path, help="Input turntable/orbit video")
     parser.add_argument("--out-dir", required=True, type=Path, help="Directory to write kept frames into")
     parser.add_argument("--fps", type=float, default=3.0, help="Sampling rate before blur filtering")
-    parser.add_argument("--blur-threshold", type=float, default=60.0,
-                         help="Minimum variance-of-Laplacian to keep a frame; raise if too many blurry frames slip through")
+    parser.add_argument("--drop-fraction", type=float, default=0.15,
+                         help="Fraction of sampled frames to drop as blurriest-of-the-set (0 disables filtering)")
     args = parser.parse_args()
 
     if not args.video.exists():
@@ -59,11 +68,13 @@ def main() -> int:
         print("error: ffmpeg produced no frames", file=sys.stderr)
         return 1
 
+    scores = {frame: blur_score(frame) for frame in frames}
+    threshold = np.quantile(list(scores.values()), args.drop_fraction) if args.drop_fraction > 0 else -1.0
+
     args.out_dir.mkdir(parents=True, exist_ok=True)
     kept, dropped = [], []
-    for frame in frames:
-        score = blur_score(frame)
-        if score >= args.blur_threshold:
+    for frame, score in scores.items():
+        if score >= threshold:
             dest = args.out_dir / frame.name
             dest.write_bytes(frame.read_bytes())
             kept.append({"file": frame.name, "blur_score": score})
@@ -73,7 +84,8 @@ def main() -> int:
     manifest = {
         "video": str(args.video),
         "sampled_fps": args.fps,
-        "blur_threshold": args.blur_threshold,
+        "drop_fraction": args.drop_fraction,
+        "derived_blur_threshold": float(threshold),
         "total_sampled": len(frames),
         "kept": len(kept),
         "dropped": len(dropped),
@@ -84,7 +96,8 @@ def main() -> int:
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     print(f"sampled {len(frames)} frames at {args.fps} fps")
-    print(f"kept {len(kept)}, dropped {len(dropped)} below blur threshold {args.blur_threshold}")
+    print(f"kept {len(kept)}, dropped {len(dropped)} "
+          f"(bottom {args.drop_fraction:.0%} by blur score, threshold={threshold:.1f})")
     print(f"manifest: {manifest_path}")
 
     if len(kept) < 20:

@@ -33,7 +33,8 @@ def main() -> int:
     parser.add_argument("--video", required=True, type=Path)
     parser.add_argument("--scene", required=True, help="Short name for this capture, e.g. 'mug'")
     parser.add_argument("--fps", type=float, default=3.0)
-    parser.add_argument("--blur-threshold", type=float, default=60.0)
+    parser.add_argument("--drop-fraction", type=float, default=0.15,
+                         help="Fraction of sampled frames to drop as blurriest-of-the-set")
     parser.add_argument("--details", nargs="+", default=["preview", "reduced", "medium"])
     args = parser.parse_args()
 
@@ -46,7 +47,7 @@ def main() -> int:
         "--video", str(args.video),
         "--out-dir", str(frames_dir),
         "--fps", str(args.fps),
-        "--blur-threshold", str(args.blur_threshold),
+        "--drop-fraction", str(args.drop_fraction),
     ])
 
     run_step("2/4 photogrammetry reconstruction", [

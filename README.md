@@ -82,15 +82,57 @@ lighting falloff, sensor noise, or lens distortion real photos do):
 
 | Detail | Time (s) | Vertices | Faces | Watertight | Verified |
 |---|---|---|---|---|---|
-| preview | 4.9 | 1539 | 3074 | True | yes |
-| reduced | 7.5 | 1483 | 2962 | True | yes |
+| preview | 3.8 | 1314 | 2619 | False | yes |
+| reduced | 5.7 | 1381 | 2758 | True | yes |
 
-All 72 input frames were used (0 skipped/invalid) and every geometry
-round-trip check (`.usdz` → `.obj`/`.ply`/`.glb` → reload) passed.
+61 of 72 sampled frames survived blur filtering (0 skipped/invalid by
+Object Capture itself) and every geometry round-trip check (`.usdz` →
+`.obj`/`.ply`/`.glb` → reload) passed at both detail levels. `preview`
+came out non-watertight (a small hole in the low-poly approximation) while
+`reduced` didn't — expected run-to-run/detail-level variance in the mesh
+simplification, not a bug.
 
-**Real capture**: not yet run — this needs an actual object filmed with a
-phone camera. Once run, replace this section with that report's table
-(`outputs/reports/<scene>_report.md`) and a thumbnail.
+**Real footage (Pexels stock video, a globe/cylinder/cube studio still-life,
+camera fixed, globe motorized to spin in place)**: ran end-to-end and did
+*not* crash — but the result is a real negative case worth keeping, not a
+success:
+
+| Detail | Time (s) | Vertices | Faces | Watertight | Verified |
+|---|---|---|---|---|---|
+| preview | 7.6 | 1558 | 3022 | False | yes |
+
+Two real issues surfaced, both fixed in the code except the second:
+
+1. **The blur filter dropped every single frame.** Variance-of-Laplacian
+   scales with scene contrast, not just focus — this clip's moody, low-key
+   studio lighting scored 8-16 across the board against a threshold (60)
+   tuned on brighter test frames. Fixed by switching `01_extract_frames.py`
+   to drop the blurriest *percentile* of the sampled set instead of an
+   absolute cutoff, which self-calibrates to each video's lighting.
+2. **The reconstruction itself is geometrically wrong, and verification
+   didn't catch it.** The mesh is a single fused blob — part sphere, part
+   flattened slab — because the shot has a fixed camera with only the
+   globe rotating while the cube and cylinder behind it stay static. SfM
+   assumes one rigid scene across all views; here two independently-moving
+   things share the frame, which no amount of feature matching can resolve
+   into a correct single geometry. The verification step still reported
+   "yes" because it only checks that the mesh survives format round-trips
+   *internally consistently* — that's a check on export integrity, not
+   reconstruction accuracy, and this is exactly the gap between the two.
+   Not fixed, because the fix is capture discipline (crop to a clean plate
+   with only the subject and nothing else in frame), not code — but worth
+   stating plainly rather than papering over with a "verified: yes" that
+   implies more than it means.
+
+**Real capture with genuine camera motion**: still not run. A second stock
+clip (a static-tripod push-in on a statue) was checked and rejected for the
+same underlying reason — no angular parallax, just a zoom. Stock b-roll is
+shot for visual storytelling, not photogrammetry, and in practice almost
+none of it has the camera path Object Capture needs. The reliable next
+step is still filming a real ~30-45s phone orbit around a small object by
+hand — genuine lateral motion around a single static subject with nothing
+else in frame is what both of the real-footage attempts above were
+missing.
 
 ## Why this design
 
