@@ -109,7 +109,24 @@ simplification, not a bug.
 
 **Real footage (Pexels stock video, a globe/cylinder/cube studio still-life,
 camera fixed, globe motorized to spin in place)**: ran end-to-end and
-surfaced two real issues, both now fixed in code:
+surfaced two real issues, both now fixed in code.
+
+How this was run: the clip is Pexels video 7601710 by Marina Leonova
+(13s, 1080p, [Pexels License](https://www.pexels.com/license/)), fetched
+through the official Pexels API with a free key — scraping Pexels/Pixabay
+directly is blocked by Cloudflare. It is not committed to this repo
+(`data/raw/` is gitignored). Final run:
+
+```bash
+python run_pipeline.py --video data/raw/pexels_globe.mp4 --scene globe \
+    --fps 6 --auto-crop-subject --details preview
+```
+
+81 frames sampled at 6 fps, 69 kept after dropping the blurriest 15%,
+cropped to a 445×451 region (9.7% of the frame), then reconstructed by
+Object Capture at `preview` detail in ~4s with 0 skipped/invalid frames.
+There is no ground-truth mesh for this clip, so "coherent" below is a
+visual judgment of the rendered thumbnails, not a measured accuracy.
 
 1. **The blur filter dropped every single frame.** Variance-of-Laplacian
    scales with scene contrast, not just focus — this clip's moody, low-key
@@ -148,7 +165,7 @@ surfaced two real issues, both now fixed in code:
    coherent single-object reconstruction instead of a fused mess.
 
 **Real capture with genuine camera motion**: still not run. A second stock
-clip (a static-tripod push-in on a statue) was checked and rejected for the
+clip (Pexels 7317794, a static-tripod push-in on a statue) was checked and rejected for the
 same underlying reason — no angular parallax, just a zoom. Stock b-roll is
 shot for visual storytelling, not photogrammetry, and in practice almost
 none of it has the camera path Object Capture needs. Filming a real
